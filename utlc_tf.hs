@@ -41,31 +41,42 @@ class UTLCTerm t where
 newtype Subst t = Subst { subst :: Ctx t -> t }
 
 instance UTLCTerm t => UTLCTerm (Subst t) where
-  var idx ctx      = let val = do val <- lkup ctx idx
-                                  return $ case val of
+  var idx          = Subst $ \ctx ->
+                      let val = do val <- lkup ctx idx
+                                   return $ case val of
                                     Nothing -> var idx
                                     Just term -> term
-                     in case val of
-                      Nothing -> var idx
-                      Just val' -> val'
-  lam body ctx = lam $ subst body ctx
-  app fun arg ctx = app (subst fun ctx) (subst arg ctx)
+                      in case val of
+                                  Nothing -> var idx
+                                  Just val'' -> val''
+  lam body = Subst $ \ctx -> lam $ subst body ctx
+  app fun arg = Subst $ \ctx -> app (subst fun ctx) (subst arg ctx)
 
 newtype WHNF t = WHNF { whnf :: Ctx t -> t }
 newtype WHNFAppO t = WHNFAppO { whnfappo :: Ctx t -> t }
 newtype WHNFAppI t = WHNFAppI { whnfappi :: Ctx t -> t }
 
 instance UTLCTerm t => UTLCTerm (WHNF t) where
-  var idx ctx = subst (var idx) ctx
-  lam body ctx = lam $ subst (Subst (whnf body)) ctx
-  -- lam body ctx = subst (lam body) ctx
-  app fun arg ctx = app (whnfappo fun (Just arg':ctx)) arg'
+  var idx = WHNF $ \ctx -> subst (var idx) ctx
+  lam body = WHNF $ \ctx -> subst (lam (Subst $ whnf body)) ctx
+  app fun arg = WHNF $ \ctx -> case lamBody (whnf fun ctx) of
+                                Nothing -> subst (app (Subst $ whnf fun ))
+
+  whnfappo (app fun arg) ctx
+                                        app (whnfappo fun (Just arg':ctx)) arg'
     where arg' = subst arg ctx
 
 instance UTLCTerm t => UTLCTerm (WHNFAppO t) where
   var idx (_:ctx) = whnf (var idx) ctx
   lam body ctx = subst body ctx
   app fun arg (_:ctx) = whnf (app fun arg) ctx
+
+newtype IsLam = IsLam { islam :: Bool }
+
+instance UTLCTerm IsLam where
+  var _ = IsLam False
+  lam _ = IsLam True
+  app _ _ = IsLam False
 
 
 -- instance UTLCTerm (e -> t) where
